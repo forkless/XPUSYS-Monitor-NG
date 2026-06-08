@@ -1,0 +1,26 @@
+# CPU / RAM monitoring — required by all providers
+psutil
+
+# NVIDIA GPU monitoring — required by NvidiaProvider only
+# Safe to install on Intel/AMD machines; unused if no NVIDIA driver is present
+pynvml
+
+# AMD GPU monitoring (Linux) — commented out for Windows-native ROCm
+# rocm_smi_lib is Linux-only; Windows ROCm uses torch.cuda APIs instead.
+# Install only if you are on Linux with ROCm and want driver-level GPU load:
+#   pip install rocm_smi_lib
+# rocm_smi_lib
+
+# ---------------------------------------------------------------------------
+# The following are provided by ComfyUI itself — DO NOT add them here.
+# Listed for reference only so manual environment setups know the minimums.
+# ---------------------------------------------------------------------------
+#
+# torch >= 2.5
+#   torch.xpu (Intel Arc) was officially introduced in PyTorch 2.5.
+#   torch.cuda (NVIDIA/AMD ROCm) has been stable since PyTorch 1.x.
+#   Install the ROCm-enabled build from: https://pytorch.org/get-started/locally/
+#
+# aiohttp >= 3.8
+#   Used for HTTP routes and WebSocket broadcast.
+#   ComfyUI already depends on aiohttp; no separate installation needed.
