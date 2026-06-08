@@ -41,6 +41,16 @@ are welcome to take whatever is useful.
 | `rocm_smi_lib` dependency | Removed; no replacement needed | ✅ |
 | Windows ROCm detection | `getattr(torch.version, 'roc', None)` + GPU name fallback | ✅ |
 
+## Tested Hardware
+
+This plugin has only been tested on a single configuration:
+
+- **GPU**: AMD Radeon RX 9070 XT (ROCm 7.2, Windows)
+- **PyTorch**: 2.9.1+rocm7.2.1
+- **ComfyUI**: v0.24.0
+
+Other AMD GPUs may work but have not been validated. Results on older AMD cards (RX 6000 series, Instinct) or different ROCm versions may vary.
+
 ## Requirements
 
 - ComfyUI (any recent version)
