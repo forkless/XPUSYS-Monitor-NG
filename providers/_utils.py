@@ -378,6 +378,100 @@ class _TypeperfGpuQuery:
             return None
 
 
+# ---------------------------------------------------------------------------
+# amdsmi-based GPU utilisation (official AMD SMI library)
+#
+# Uses the AMD SMI Python package which ships with ROCm. Talks directly
+# to the AMD driver — not through WDDM. Reports real GPU engine utilisation
+# (GFX, MM, MEM) as percentages 0–100%.
+#
+# Install:  pip install amdsmi
+# Requires: ROCm 6+ (user has ROCm 7.2)
+# ---------------------------------------------------------------------------
+
+class _AmdSmiGpuQuery:
+    """GPU utilisation reader via official AMD SMI Python library."""
+
+    def __init__(self):
+        self._handle = None
+        self._initialized = False
+        self._ok = False
+
+    def init(self) -> bool:
+        try:
+            import amdsmi as _smi
+            _smi.amdsmi_init()
+            self._smi = _smi
+            handles = _smi.amdsmi_get_processor_handles()
+            if not handles:
+                logger.warning("XPUSYSMonitor: amdsmi — no processor handles.")
+                _smi.amdsmi_shut_down()
+                return False
+
+            self._handle = handles[0]
+            self._initialized = True
+
+            # Test read to confirm it works
+            try:
+                activity = _smi.amdsmi_get_gpu_activity(self._handle)
+                logger.info(
+                    f"XPUSYSMonitor: amdsmi GPU activity test — "
+                    f"{activity!r}"
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"XPUSYSMonitor: amdsmi activity test failed — {exc}"
+                )
+
+            self._ok = True
+            logger.info("XPUSYSMonitor: amdsmi GPU counters OK.")
+            return True
+
+        except ImportError:
+            logger.info(
+                "XPUSYSMonitor: amdsmi not installed — "
+                "run `pip install amdsmi` to enable AMD SMI monitoring."
+            )
+            return False
+        except Exception as exc:
+            logger.warning(f"XPUSYSMonitor: amdsmi init error — {exc}")
+            try:
+                self._smi.amdsmi_shut_down()
+            except Exception:
+                pass
+            return False
+
+    def read_gpu_utilization(self) -> float:
+        """Return GPU utilisation % via amdsmi (GFX engine)."""
+        if not self._ok or self._handle is None:
+            return 0.0
+        try:
+            activity = self._smi.amdsmi_get_gpu_activity(self._handle)
+
+            # amdsmi_get_gpu_activity returns engine utilisation.
+            # The exact return type depends on the version. Try common
+            # access patterns: attribute, dict key, or index.
+            if hasattr(activity, 'gfx'):
+                return float(activity.gfx)
+            if isinstance(activity, dict):
+                return float(activity.get('gfx', activity.get('GFX', 0.0)))
+            if isinstance(activity, (list, tuple)):
+                return float(activity[0]) if activity else 0.0
+
+            # Last resort: try treating it as a number directly
+            return float(activity)
+        except Exception:
+            return 0.0
+
+    def close(self) -> None:
+        if self._initialized:
+            try:
+                self._smi.amdsmi_shut_down()
+            except Exception:
+                pass
+        self._ok = False
+
+
 __all__ = [
     "_is_admin",
     "_get_cpu_info",
@@ -385,4 +479,5 @@ __all__ = [
     "_read_commit_charge",
     "_PdhQuery",
     "_TypeperfGpuQuery",
+    "_AmdSmiGpuQuery",
 ]

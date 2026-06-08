@@ -18,7 +18,7 @@ import sys
 from typing import Tuple
 
 from .base import BaseGPUProvider, GPUSnapshot
-from ._utils import _get_cpu_info, _read_cpu_ram_stats, _TypeperfGpuQuery, _is_admin
+from ._utils import _get_cpu_info, _read_cpu_ram_stats, _TypeperfGpuQuery, _AmdSmiGpuQuery, _is_admin
 
 logger = logging.getLogger("XPUSYSMonitor")
 
@@ -52,11 +52,13 @@ class AMDProvider(BaseGPUProvider):
         self._check_torch()
         self._check_psutil()
 
-        # Windows GPU utilisation — typeperf (primary, reliable CSV output)
+        # Windows GPU utilisation — amdsmi (official) -> typeperf (fallback)
         # PDH has wildcard-counter issues with AMD drivers, so skip it.
-        self._pdh_ok = False  # PDH disabled for AMD (wildcard handling unreliable)
+        self._pdh_ok = False
+        self._as_gpu = _AmdSmiGpuQuery()
+        self._as_gpu_ok = self._as_gpu.init()
         self._tp_gpu = _TypeperfGpuQuery()
-        self._tp_gpu_ok = self._tp_gpu.init()
+        self._tp_gpu_ok = self._tp_gpu.init() if not self._as_gpu_ok else False
 
         # BaseGPUProvider.__init__ starts the polling thread — call last
         super().__init__(interval_ms=interval_ms)
@@ -185,12 +187,11 @@ class AMDProvider(BaseGPUProvider):
         """
         Return GPU utilisation %.
 
-        Tries PDH API first (sub-millisecond, ctypes).
-        Falls back to PowerShell Get-Counter if PDH is unavailable
-        (slower ~100-300ms but works on any Windows WDDM driver).
+        Tries amdsmi (official AMD SMI, bypasses WDDM).
+        Falls back to typeperf (WDDM counters, best-effort).
         """
-        if self._pdh_ok:
-            return self._pdh.read_gpu_utilization()
+        if self._as_gpu_ok:
+            return self._as_gpu.read_gpu_utilization()
         if self._tp_gpu_ok:
             return self._tp_gpu.read_gpu_utilization()
         return 0.0
