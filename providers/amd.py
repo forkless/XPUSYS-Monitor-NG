@@ -76,8 +76,12 @@ class AMDProvider(BaseGPUProvider):
                 self._torch_ok = True
                 logger.info(
                     f"XPUSYSMonitor: torch.cuda OK (AMD ROCm), "
-                    f"device count={torch.cuda.device_count()}"
+                    f"device count={torch.cuda.device_count()}, "
+                    f"device={torch.cuda.get_device_name(self._device_index)!r}"
                 )
+                # Force CUDA context init — some ROCm builds
+                # defer context creation until first GPU operation.
+                torch.cuda.synchronize(self._device_index)
             else:
                 logger.warning("XPUSYSMonitor: torch.cuda not available.")
         except Exception as exc:
@@ -114,26 +118,50 @@ class AMDProvider(BaseGPUProvider):
         """
         Return (free_gb, total_gb, driver_used_gb) via torch.cuda.mem_get_info.
 
-        mem_get_info() returns (free_bytes, total_bytes) from the driver,
-        which works on ROCm 6+ PyTorch on Windows.
+        Falls back to get_device_properties if mem_get_info is unavailable.
+        Forces CUDA context init to ensure device queries succeed.
         """
-        if self._torch_ok:
-            try:
-                import torch
-                free_bytes, total_bytes = torch.cuda.mem_get_info(self._device_index)
-                gb = 1024 ** 3
-                free_gb = free_bytes / gb
-                total_gb = total_bytes / gb
-                used_gb = max(0.0, total_gb - free_gb)
-                return free_gb, total_gb, used_gb
-            except Exception:
-                # Fallback: total from device properties
-                try:
-                    import torch
-                    total_gb = torch.cuda.get_device_properties(self._device_index).total_memory / (1024 ** 3)
-                    return 0.0, total_gb, 0.0
-                except Exception:
-                    pass
+        if not self._torch_ok:
+            return 0.0, 0.0, 0.0
+
+        import torch
+
+        # Force CUDA context init — required by some ROCm builds
+        # before device queries return valid data.
+        try:
+            torch.cuda.synchronize(self._device_index)
+        except Exception:
+            pass
+
+        gb = 1024 ** 3
+
+        # Primary: mem_get_info — driver-level free/total
+        try:
+            free_bytes, total_bytes = torch.cuda.mem_get_info(self._device_index)
+            free_gb   = free_bytes  / gb
+            total_gb  = total_bytes / gb
+            used_gb   = max(0.0, total_gb - free_gb)
+            logger.debug(
+                f"XPUSYSMonitor: mem_get_info OK "
+                f"(free={free_gb:.1f}G, total={total_gb:.1f}G)"
+            )
+            return free_gb, total_gb, used_gb
+        except Exception as exc:
+            logger.debug(f"XPUSYSMonitor: mem_get_info failed — {exc}")
+
+        # Fallback 1: total from device properties
+        try:
+            total_gb = torch.cuda.get_device_properties(
+                self._device_index
+            ).total_memory / gb
+            logger.debug(
+                f"XPUSYSMonitor: get_device_properties OK "
+                f"(total={total_gb:.1f}G)"
+            )
+            return 0.0, total_gb, 0.0
+        except Exception as exc:
+            logger.debug(f"XPUSYSMonitor: get_device_properties failed — {exc}")
+
         return 0.0, 0.0, 0.0
 
     def _read_torch_stats(self) -> Tuple[float, float]:
