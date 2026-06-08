@@ -54,7 +54,6 @@ class AMDProvider(BaseGPUProvider):
 
         # Windows GPU utilisation — typeperf (primary, reliable CSV output)
         # PDH has wildcard-counter issues with AMD drivers, so skip it.
-        self._pdh = _PdhQuery()
         self._pdh_ok = False  # PDH disabled for AMD (wildcard handling unreliable)
         self._tp_gpu = _TypeperfGpuQuery()
         self._tp_gpu_ok = self._tp_gpu.init()
