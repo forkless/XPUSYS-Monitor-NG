@@ -122,8 +122,20 @@ class AMDProvider(BaseGPUProvider):
         """
         Return (free_gb, total_gb, driver_used_gb) via torch.cuda.mem_get_info.
 
+        REPLACES: upstream rocm_smi.getMemFreeVdev(0),
+                  rocm_smi.getMemSizeVdev(0),
+                  rocm_smi.getMemUsedVdev(0)
+
+        torch.cuda.mem_get_info() returns (free_bytes, total_bytes) from
+        the AMD HIP driver on ROCm 6+ for Windows. This is the same function
+        used by NVIDIA CUDA — AMD ROCm's HIP runtime implements the same
+        CUDA API surface, so it works without any AMD-specific library.
+
         Falls back to get_device_properties if mem_get_info is unavailable.
-        Forces CUDA context init to ensure device queries succeed.
+        Forces CUDA context init (torch.cuda.synchronize) before reading;
+        some ROCm builds defer HIP context creation until the first GPU
+        operation, and mem_get_info() returns (0, 0) without an active
+        context.
         """
         if not self._torch_ok:
             return 0.0, 0.0, 0.0
@@ -187,8 +199,20 @@ class AMDProvider(BaseGPUProvider):
         """
         Return GPU utilisation %.
 
-        Tries amdsmi (official AMD SMI, bypasses WDDM).
-        Falls back to typeperf (WDDM counters, best-effort).
+        REPLACES: upstream rocm_smi.getGpuBusyVdev(0)
+
+        Two-layer fallback chain:
+          1. amdsmi       — official AMD SMI library (pip install amdsmi).
+                            Bypasses WDDM, talks directly to the AMD driver.
+                            Gracefully skipped on Windows because the PyPI
+                            package searches for libamd_smi.so (Linux-only).
+          2. typeperf     — Windows built-in (available since Vista).
+                            Reads \\GPU Engine(*)\\Utilization Percentage
+                            via WDDM performance counters. Returns CSV with
+                            one column per engine instance (3D, Compute,
+                            Copy, Video, Timer, etc.). We use max() across
+                            all engines — averaging dilutes the signal
+                            across hundreds of idle engine types.
         """
         if self._as_gpu_ok:
             return self._as_gpu.read_gpu_utilization()
@@ -200,7 +224,12 @@ class AMDProvider(BaseGPUProvider):
         """
         GPU core frequency in MHz.
 
-        Unavailable on Windows without vendor driver API.
+        REPLACES: upstream rocm_smi.getSingleClockSpeed(0)
+
+        The AMD WDDM driver on Windows does not expose GPU core clock
+        through any standard Python-accessible interface (no PDH counter,
+        no WMI class, no torch.cuda equivalent). Returns 0 (unavailable
+        sentinel matching the GPUSnapshot contract default).
         """
         return 0.0
 
@@ -208,7 +237,14 @@ class AMDProvider(BaseGPUProvider):
         """
         GPU core temperature in C.
 
-        Unavailable on Windows without vendor driver API.
+        REPLACES: upstream rocm_smi.getTempVdev(0)
+
+        The AMD WDDM driver on the tested configuration (RX 9070 XT,
+        ROCm 7.2, Windows) does not register a GPU temperature performance
+        counter. Tested: typeperf -q "GPU Adapter" returned "object not
+        found". Returns -1 (unavailable sentinel). Some AMD cards on newer
+        driver versions or different Windows builds may expose this through
+        WMI or PDH — this is hardware/driver-dependent.
         """
         return -1.0
 
@@ -216,7 +252,13 @@ class AMDProvider(BaseGPUProvider):
         """
         Return (power_w, tgp_w, power_available).
 
-        Unavailable on Windows without vendor driver API.
+        REPLACES: upstream rocm_smi.getPowerVdev(0) and
+                  rocm_smi.getPowerCapVdev(0)
+
+        GPU power monitoring is not exposed through Windows standard APIs
+        on the tested AMD driver. Returns (-1.0, 0.0, False) — the
+        GPUSnapshot power_available=False tells the frontend to grey out
+        the PWR capsule.
         """
         return -1.0, 0.0, False
 

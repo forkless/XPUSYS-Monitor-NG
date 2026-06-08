@@ -277,18 +277,34 @@ class _PdhQuery:
 # ---------------------------------------------------------------------------
 # typeperf-based GPU utilisation fallback
 #
-# Uses Windows built-in typeperf.exe (available since Vista) to query
-# the \GPU Engine(*)\Utilization Percentage performance counter.
+# ADDED for Windows-native AMD ROCm support (no rocm_smi_lib).
 #
-# typeperf avoids the quoting/escaping headaches of PowerShell -Command
-# and is available on every Windows system with WDDM drivers.
+# Two approaches were attempted before settling on typeperf:
 #
-# Output format (CSV):
-#   "(PDH-CSV 4.0) (...)", "\\COMPUTER\GPU Engine(*)\Utilization Percentage"
-#   "date time", "val1,val2,val3,..."
+#   1. PDH ctypes  —  _PdhQuery (above). Uses PdhAddEnglishCounterW with
+#      wildcard path "\GPU Engine(*)\Utilization Percentage". The wildcard
+#      expands to hundreds of per-process engine instances, but
+#      PdhGetFormattedCounterValue on a wildcard handle returns only the
+#      first matching instance, not an aggregate. This approach is disabled
+#      for AMD in favour of typeperf.
 #
-# We parse the second line, split the comma-separated values, and
-# average them to get total GPU utilisation.
+#   2. typeperf    —  This class (below). Windows built-in CLI tool that
+#      accepts the same counter path and returns CSV with one column per
+#      engine instance. Every column after the timestamp is a separate
+#      engine value. We parse all columns and take max()—not average—because
+#      with hundreds of engines (video decode, copy, timer, security, etc.)
+#      all reporting 0 at idle, averaging dilutes the real signal from the
+#      few active 3D/Compute engines during a workflow.
+#
+#   3. amdsmi      —  _AmdSmiGpuQuery (further below). Official AMD SMI
+#      library. Gracefully skipped on Windows because the PyPI package
+#      searches for libamd_smi.so (Linux-only).
+#
+# Output format (typeperf CSV):
+#   Line 1: "(PDH-CSV 4.0)","\\PC\GPU Engine(pid_..._engtype_3D)\...", ...
+#   Line 2: "date time","0.000000","1.299634","0.000000", ...
+#
+#  REPLACES: upstream rocm_smi.getGpuBusyVdev(0)
 # ---------------------------------------------------------------------------
 
 import csv as _csv
@@ -381,12 +397,26 @@ class _TypeperfGpuQuery:
 # ---------------------------------------------------------------------------
 # amdsmi-based GPU utilisation (official AMD SMI library)
 #
-# Uses the AMD SMI Python package which ships with ROCm. Talks directly
-# to the AMD driver — not through WDDM. Reports real GPU engine utilisation
-# (GFX, MM, MEM) as percentages 0–100%.
+# ADDED for Windows-native AMD ROCm support.
+#
+# The official AMD SMI Python package (pip install amdsmi) provides direct
+# driver-level GPU metrics — engine utilisation (GFX, MM, MEM), temperature,
+# power, clock speed — without going through WDDM performance counters.
+#
+# On Windows, the PyPI package's ctypes wrapper searches for the native
+# library at a hardcoded Linux path (libamd_smi.so via ctypes.CDLL).
+# Windows DLLs use different filenames and search paths, so the import
+# fails with KeyError: 'libamd_smi.so' on a standard Windows ROCm install.
+#
+# This class uses try/except ImportError to gracefully skip when the
+# package is not installed or the native library cannot be loaded. No
+# crash, no stack trace — just a single info-line in the log.
+#
+# If AMD releases an official Windows-compatible amdsmi wheel in the
+# future, this class will activate automatically without code changes.
 #
 # Install:  pip install amdsmi
-# Requires: ROCm 6+ (user has ROCm 7.2)
+# Requires: ROCm 6+ (ROCm 7.2 on the tested configuration)
 # ---------------------------------------------------------------------------
 
 class _AmdSmiGpuQuery:
