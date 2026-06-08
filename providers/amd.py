@@ -18,7 +18,7 @@ import sys
 from typing import Tuple
 
 from .base import BaseGPUProvider, GPUSnapshot
-from ._utils import _get_cpu_info, _read_cpu_ram_stats, _PdhQuery, _TypeperfGpuQuery, _is_admin
+from ._utils import _get_cpu_info, _read_cpu_ram_stats, _TypeperfGpuQuery, _is_admin
 
 logger = logging.getLogger("XPUSYSMonitor")
 
@@ -52,11 +52,12 @@ class AMDProvider(BaseGPUProvider):
         self._check_torch()
         self._check_psutil()
 
-        # Windows GPU utilisation — chain: PDH (fast) -> typeperf (fallback)
+        # Windows GPU utilisation — typeperf (primary, reliable CSV output)
+        # PDH has wildcard-counter issues with AMD drivers, so skip it.
         self._pdh = _PdhQuery()
-        self._pdh_ok = self._pdh.init()
+        self._pdh_ok = False  # PDH disabled for AMD (wildcard handling unreliable)
         self._tp_gpu = _TypeperfGpuQuery()
-        self._tp_gpu_ok = self._tp_gpu.init() if not self._pdh_ok else False
+        self._tp_gpu_ok = self._tp_gpu.init()
 
         # BaseGPUProvider.__init__ starts the polling thread — call last
         super().__init__(interval_ms=interval_ms)
