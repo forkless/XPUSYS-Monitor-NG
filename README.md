@@ -5,8 +5,8 @@
 This is a derived work based on [ComfyUI-XPUSYS-Monitor](https://github.com/allanmeng/ComfyUI-XPUSYS-Monitor)
 by allanmeng. It is published separately solely because the changes
 are narrowly scoped to Windows AMD ROCm and were developed with AI
-agent assistance — the author does not wish to push AI-generated
-changes into the original repository.
+agent assistance — the author does not wish to push Agent generated
+changes into the original repository out of respect for the developer.
 
 ## Intent
 
