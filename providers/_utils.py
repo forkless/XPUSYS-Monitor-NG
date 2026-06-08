@@ -275,53 +275,53 @@ class _PdhQuery:
 
 
 # ---------------------------------------------------------------------------
-# PowerShell-based GPU utilisation fallback
+# typeperf-based GPU utilisation fallback
 #
-# Used when PDH counters are unavailable. Calls PowerShell's Get-Counter
-# cmdlet via subprocess to read the same WDDM GPU engine counters.
+# Uses Windows built-in typeperf.exe (available since Vista) to query
+# the \GPU Engine(*)\Utilization Percentage performance counter.
 #
-# Slower than PDH (~100-300ms per call vs <1ms) but works on any Windows
-# version with WDDM drivers — no extra dependencies.
+# typeperf avoids the quoting/escaping headaches of PowerShell -Command
+# and is available on every Windows system with WDDM drivers.
+#
+# Output format (CSV):
+#   "(PDH-CSV 4.0) (...)", "\\COMPUTER\GPU Engine(*)\Utilization Percentage"
+#   "date time", "val1,val2,val3,..."
+#
+# We parse the second line, split the comma-separated values, and
+# average them to get total GPU utilisation.
 # ---------------------------------------------------------------------------
 
+import csv as _csv
 import subprocess as _subprocess
 
-_POWERSHELL_GPU_CMD = (
-    'try{(Get-Counter \\"\\GPU Engine(*)\\Utilization Percentage\\" '
-    '-MaxSamples 1 -ErrorAction Stop).CounterSamples|'
-    '?{$_.Status -eq 0}|'
-    'Measure-Object CookedValue -Average|'
-    '%{$_.Average}}catch{0}'
-)
 
-
-class _PowerShellGpuQuery:
-    """Fallback GPU utilisation reader via PowerShell Get-Counter."""
+class _TypeperfGpuQuery:
+    """GPU utilisation reader via typeperf (Windows built-in)."""
 
     def __init__(self):
         self._ok = False
+        self._counter_path = "\\GPU Engine(*)\\Utilization Percentage"
 
     def init(self) -> bool:
-        # Quick self-test: can we launch PowerShell and get a number back?
         try:
             val = self._run_query()
             self._ok = val is not None
             if self._ok:
                 logger.info(
-                    f"XPUSYSMonitor: PowerShell GPU counters OK "
+                    f"XPUSYSMonitor: typeperf GPU counters OK "
                     f"(test={val:.1f}%)."
                 )
             else:
                 logger.warning(
-                    "XPUSYSMonitor: PowerShell GPU counters unavailable."
+                    "XPUSYSMonitor: typeperf GPU counters unavailable."
                 )
             return self._ok
         except Exception as exc:
-            logger.debug(f"XPUSYSMonitor: PowerShell GPU init error — {exc}")
+            logger.debug(f"XPUSYSMonitor: typeperf GPU init error — {exc}")
             return False
 
     def read_gpu_utilization(self) -> float:
-        """Query total GPU utilisation % via PowerShell."""
+        """Query total GPU utilisation % via typeperf."""
         if not self._ok:
             return 0.0
         try:
@@ -330,19 +330,38 @@ class _PowerShellGpuQuery:
         except Exception:
             return 0.0
 
-    @staticmethod
-    def _run_query() -> float | None:
-        """Run the PowerShell query and return the average, or None."""
+    def _run_query(self) -> float | None:
+        """Run typeperf and parse the output. Returns average % or None."""
         try:
             r = _subprocess.run(
-                ["powershell", "-NoProfile", "-Command", _POWERSHELL_GPU_CMD],
-                capture_output=True, text=True, timeout=5,
+                ["typeperf", self._counter_path, "-sc", "1"],
+                capture_output=True, text=True, timeout=10,
                 creationflags=0x08000000,  # CREATE_NO_WINDOW
             )
             if r.returncode != 0:
                 return None
-            val = r.stdout.strip()
-            return float(val) if val else None
+
+            # Parse CSV output
+            # Line 1: header
+            # Line 2: data  e.g. "...", "0.000000,12.500000,5.200000"
+            lines = r.stdout.strip().splitlines()
+            if len(lines) < 2:
+                return None
+
+            # Second line: extract the quoted value column
+            row = list(_csv.reader([lines[1]]))[0]
+            if len(row) < 2:
+                return None
+
+            # The last column contains comma-separated per-engine values
+            raw = row[-1]
+            values = [float(v) for v in raw.split(",") if v.strip()]
+            if not values:
+                return None
+
+            # Average all engine values for total GPU utilisation
+            return sum(values) / len(values)
+
         except Exception:
             return None
 
@@ -353,5 +372,5 @@ __all__ = [
     "_read_cpu_ram_stats",
     "_read_commit_charge",
     "_PdhQuery",
-    "_PowerShellGpuQuery",
+    "_TypeperfGpuQuery",
 ]

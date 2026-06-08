@@ -18,7 +18,7 @@ import sys
 from typing import Tuple
 
 from .base import BaseGPUProvider, GPUSnapshot
-from ._utils import _get_cpu_info, _read_cpu_ram_stats, _PdhQuery, _PowerShellGpuQuery, _is_admin
+from ._utils import _get_cpu_info, _read_cpu_ram_stats, _PdhQuery, _TypeperfGpuQuery, _is_admin
 
 logger = logging.getLogger("XPUSYSMonitor")
 
@@ -52,11 +52,11 @@ class AMDProvider(BaseGPUProvider):
         self._check_torch()
         self._check_psutil()
 
-        # Windows GPU utilisation — chain: PDH (fast) -> PowerShell (fallback)
+        # Windows GPU utilisation — chain: PDH (fast) -> typeperf (fallback)
         self._pdh = _PdhQuery()
         self._pdh_ok = self._pdh.init()
-        self._ps_gpu = _PowerShellGpuQuery()
-        self._ps_gpu_ok = self._ps_gpu.init() if not self._pdh_ok else False
+        self._tp_gpu = _TypeperfGpuQuery()
+        self._tp_gpu_ok = self._tp_gpu.init() if not self._pdh_ok else False
 
         # BaseGPUProvider.__init__ starts the polling thread — call last
         super().__init__(interval_ms=interval_ms)
@@ -191,8 +191,8 @@ class AMDProvider(BaseGPUProvider):
         """
         if self._pdh_ok:
             return self._pdh.read_gpu_utilization()
-        if self._ps_gpu_ok:
-            return self._ps_gpu.read_gpu_utilization()
+        if self._tp_gpu_ok:
+            return self._tp_gpu.read_gpu_utilization()
         return 0.0
 
     def _read_gpu_freq_mhz(self) -> float:
