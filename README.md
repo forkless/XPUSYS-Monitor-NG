@@ -2,9 +2,11 @@
 
 > **Proof of Concept** — Native Windows ROCm support for ComfyUI-XPUSYS-Monitor
 
-This is a fork of [ComfyUI-XPUSYS-Monitor](https://github.com/allanmeng/ComfyUI-XPUSYS-Monitor)
-by allanmeng, created as a proof of concept to add **native Windows AMD ROCm
-support** without requiring `rocm_smi_lib` (a Linux-only Python package).
+This is a derived work based on [ComfyUI-XPUSYS-Monitor](https://github.com/allanmeng/ComfyUI-XPUSYS-Monitor)
+by allanmeng. It is published separately solely because the changes
+are narrowly scoped to Windows AMD ROCm and were developed with AI
+agent assistance — the author does not wish to push AI-generated
+changes into the original repository.
 
 ## Intent
 
