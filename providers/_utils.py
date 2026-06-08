@@ -342,25 +342,34 @@ class _TypeperfGpuQuery:
                 return None
 
             # Parse CSV output
-            # Line 1: header
-            # Line 2: data  e.g. "...", "0.000000,12.500000,5.200000"
+            # Line 1: header with all counter paths (one per column after timestamp)
+            # Line 2: data   e.g. "date time","0.000000","1.299634","0.000000",...
             lines = r.stdout.strip().splitlines()
             if len(lines) < 2:
                 return None
 
-            # Second line: extract the quoted value column
+            # Second line: each column is a separate counter value
             row = list(_csv.reader([lines[1]]))[0]
             if len(row) < 2:
                 return None
 
-            # The last column contains comma-separated per-engine values
-            raw = row[-1]
-            values = [float(v) for v in raw.split(",") if v.strip()]
+            # Columns 1..N are individual GPU engine utilisation percentages
+            values = []
+            for v in row[1:]:
+                v = v.strip()
+                if v:
+                    values.append(float(v))
+
             if not values:
                 return None
 
             # Average all engine values for total GPU utilisation
-            return sum(values) / len(values)
+            avg = sum(values) / len(values)
+            logger.debug(
+                f"XPUSYSMonitor: typeperf read {len(values)} engines, "
+                f"avg={avg:.4f}%"
+            )
+            return avg
 
         except Exception:
             return None
