@@ -18,7 +18,7 @@ import sys
 from typing import Tuple
 
 from .base import BaseGPUProvider, GPUSnapshot
-from ._utils import _get_cpu_info, _read_cpu_ram_stats, _PdhQuery, _is_admin
+from ._utils import _get_cpu_info, _read_cpu_ram_stats, _PdhQuery, _PowerShellGpuQuery, _is_admin
 
 logger = logging.getLogger("XPUSYSMonitor")
 
@@ -52,9 +52,11 @@ class AMDProvider(BaseGPUProvider):
         self._check_torch()
         self._check_psutil()
 
-        # Windows PDH — GPU engine utilisation (graceful if unavailable)
+        # Windows GPU utilisation — chain: PDH (fast) -> PowerShell (fallback)
         self._pdh = _PdhQuery()
         self._pdh_ok = self._pdh.init()
+        self._ps_gpu = _PowerShellGpuQuery()
+        self._ps_gpu_ok = self._ps_gpu.init() if not self._pdh_ok else False
 
         # BaseGPUProvider.__init__ starts the polling thread — call last
         super().__init__(interval_ms=interval_ms)
@@ -181,13 +183,16 @@ class AMDProvider(BaseGPUProvider):
 
     def _read_gpu_load(self) -> float:
         """
-        Return GPU utilisation % via Windows PDH API.
+        Return GPU utilisation %.
 
-        Falls back to 0 if PDH is unavailable (non-Windows, or
-        counters not installed by the AMD driver).
+        Tries PDH API first (sub-millisecond, ctypes).
+        Falls back to PowerShell Get-Counter if PDH is unavailable
+        (slower ~100-300ms but works on any Windows WDDM driver).
         """
         if self._pdh_ok:
             return self._pdh.read_gpu_utilization()
+        if self._ps_gpu_ok:
+            return self._ps_gpu.read_gpu_utilization()
         return 0.0
 
     def _read_gpu_freq_mhz(self) -> float:

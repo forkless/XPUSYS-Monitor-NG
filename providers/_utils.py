@@ -274,10 +274,84 @@ class _PdhQuery:
         self._ok = False
 
 
+# ---------------------------------------------------------------------------
+# PowerShell-based GPU utilisation fallback
+#
+# Used when PDH counters are unavailable. Calls PowerShell's Get-Counter
+# cmdlet via subprocess to read the same WDDM GPU engine counters.
+#
+# Slower than PDH (~100-300ms per call vs <1ms) but works on any Windows
+# version with WDDM drivers — no extra dependencies.
+# ---------------------------------------------------------------------------
+
+import subprocess as _subprocess
+
+_POWERSHELL_GPU_CMD = (
+    'try{(Get-Counter \\"\\GPU Engine(*)\\Utilization Percentage\\" '
+    '-MaxSamples 1 -ErrorAction Stop).CounterSamples|'
+    '?{$_.Status -eq 0}|'
+    'Measure-Object CookedValue -Average|'
+    '%{$_.Average}}catch{0}'
+)
+
+
+class _PowerShellGpuQuery:
+    """Fallback GPU utilisation reader via PowerShell Get-Counter."""
+
+    def __init__(self):
+        self._ok = False
+
+    def init(self) -> bool:
+        # Quick self-test: can we launch PowerShell and get a number back?
+        try:
+            val = self._run_query()
+            self._ok = val is not None
+            if self._ok:
+                logger.info(
+                    f"XPUSYSMonitor: PowerShell GPU counters OK "
+                    f"(test={val:.1f}%)."
+                )
+            else:
+                logger.warning(
+                    "XPUSYSMonitor: PowerShell GPU counters unavailable."
+                )
+            return self._ok
+        except Exception as exc:
+            logger.debug(f"XPUSYSMonitor: PowerShell GPU init error — {exc}")
+            return False
+
+    def read_gpu_utilization(self) -> float:
+        """Query total GPU utilisation % via PowerShell."""
+        if not self._ok:
+            return 0.0
+        try:
+            val = self._run_query()
+            return min(val, 100.0) if val is not None else 0.0
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _run_query() -> float | None:
+        """Run the PowerShell query and return the average, or None."""
+        try:
+            r = _subprocess.run(
+                ["powershell", "-NoProfile", "-Command", _POWERSHELL_GPU_CMD],
+                capture_output=True, text=True, timeout=5,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW
+            )
+            if r.returncode != 0:
+                return None
+            val = r.stdout.strip()
+            return float(val) if val else None
+        except Exception:
+            return None
+
+
 __all__ = [
     "_is_admin",
     "_get_cpu_info",
     "_read_cpu_ram_stats",
     "_read_commit_charge",
     "_PdhQuery",
+    "_PowerShellGpuQuery",
 ]
