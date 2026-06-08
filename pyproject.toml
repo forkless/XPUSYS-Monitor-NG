@@ -1,14 +1,14 @@
 [project]
-name = "ComfyUI-XPUSYS-Monitor-AMD"
+name = "ComfyUI-XPUSYS-Monitor-NG"
 version = "1.0.3"
-description = "AMD/ROCm Windows-native hardware monitor for ComfyUI. Uses torch.cuda.mem_get_info() for VRAM, PDH for GPU load, no rocm_smi_lib dependency."
+description = "Proof of Concept — native Windows AMD ROCm support for ComfyUI-XPUSYS-Monitor. Uses torch.cuda.mem_get_info() for VRAM, typeperf for GPU load, no rocm_smi_lib dependency."
 license = { text = "MIT" }
 dependencies = ["psutil", "pynvml"]
 
 [project.urls]
-Repository = "https://github.com/forkless/ComfyUI-XPUSYS-Monitor-AMD"
+Repository = "https://github.com/forkless/XPUSYS-Monitor-NG"
 
 [tool.comfy]
 PublisherId = "forkless"
-DisplayName = "ComfyUI-XPUSYS-Monitor-AMD"
+DisplayName = "XPUSYS-Monitor-NG"
 Icon = ""
