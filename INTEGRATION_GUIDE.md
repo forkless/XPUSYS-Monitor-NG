@@ -126,3 +126,14 @@ from .intel import _get_cpu_info, _read_cpu_ram_stats, ...
 
 Everything else (`base.py`, `nvidia.py`, `xpu_server.py`, `web/`, `__init__.py`)
 is unchanged functionally from the upstream baseline.
+
+---
+
+## Personal note
+
+Seeing your plugin light up on my AMD machine for the first time —
+capsules popping in, VRAM reporting live — genuinely made me smile. I
+hope this small adaptation puts a similar grin on your face. Thank you
+for building the original — it's a great piece of work.
+
+— @forkless
