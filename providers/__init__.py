@@ -137,13 +137,23 @@ def _is_amd_rocme() -> bool:
     """
     Check if torch.cuda is backed by AMD ROCm.
 
-    Returns True if torch.version.roc is not None (AMD ROCm PyTorch).
-    Returns False if torch.version.roc is None (NVIDIA or standard CUDA).
+    Primary signal: torch.version.roc is not None (AMD ROCm PyTorch).
+    Fallback signal: GPU device name contains AMD/Radeon markers
+    (catches Windows ROCm builds that don't set version.roc).
+
+    Returns False for NVIDIA or standard CUDA.
     """
     try:
         import torch
-        # torch.version.roc: True/str = AMD ROCm, None = NVIDIA/other
-        return torch.version.roc is not None
+        # Primary: ROCm version string
+        if torch.version.roc is not None:
+            return True
+        # Fallback: check GPU name for AMD identifiers
+        name = torch.cuda.get_device_name(0).lower()
+        for marker in ["amd", "radeon", "advanced micro devices"]:
+            if marker in name:
+                return True
+        return False
     except Exception:
         return False
 
