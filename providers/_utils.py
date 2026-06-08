@@ -363,13 +363,16 @@ class _TypeperfGpuQuery:
             if not values:
                 return None
 
-            # Average all engine values for total GPU utilisation
-            avg = sum(values) / len(values)
+            # Use the maximum value across all engines.
+            # Averaging would dilute the signal (hundreds of engines
+            # including idle video/copy/timer, only a few doing real work).
+            # Under load the busy 3D/compute engine dominates; at idle all are ~0.
+            peak = max(values)
             logger.debug(
                 f"XPUSYSMonitor: typeperf read {len(values)} engines, "
-                f"avg={avg:.4f}%"
+                f"max={peak:.4f}%"
             )
-            return avg
+            return peak
 
         except Exception:
             return None
